@@ -42,7 +42,7 @@
 
         <div class="notice demo-notice" id="demo-notice" hidden>
           <span class="notice-icon" aria-hidden="true">✳</span>
-          <span><strong>Preview mode</strong> — showing example data. Connect GitHub Enterprise or Azure DevOps to see your team’s live status.</span>
+          <span><strong>Preview mode</strong> — showing example data. Connect GitHub, Azure DevOps, or SonarCloud to see your team’s live status.</span>
           <a href="#connections">Connect sources <span aria-hidden="true">→</span></a>
         </div>
         <div class="notice error-notice" id="error-notice" hidden role="status"></div>
@@ -64,6 +64,15 @@
           </div>
           <div class="metric-grid" id="metrics"></div>
           <p class="metric-context">Team-level signals, compared week over week — not individual scorecards. Review coverage counts merged pull requests with a peer GitHub review or a non-zero Azure DevOps reviewer vote. Successful CI runs are not deployments; deployment frequency, change failure rate, and investment allocation are not available from these connections.</p>
+        </section>
+
+        <section class="quality-section">
+          <div class="section-heading">
+            <div><div class="section-kicker">QUALITY SIGNALS</div><h2>Software quality</h2></div>
+            <span class="quality-gate" id="quality-gate">Not available</span>
+          </div>
+          <div class="metric-grid quality-grid" id="quality-metrics"></div>
+          <p class="metric-context">Quality gate, coverage, bugs, vulnerabilities, code smells, and duplication are the latest SonarCloud project analysis, not a week-over-week trend. Configure SonarCloud separately from source-control integrations.</p>
         </section>
 
         <div class="content-grid">

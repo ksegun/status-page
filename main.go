@@ -27,6 +27,9 @@ type config struct {
 	azdoProject      string
 	azdoRepository   string
 	azdoPAT          string
+	sonarCloudToken  string
+	sonarCloudOrg    string
+	sonarCloudKey    string
 	issues           []configurationIssue
 }
 
@@ -46,6 +49,17 @@ type sourceData struct {
 	ReviewedPRs  int
 	SuccessfulCI int
 	CycleHours   []float64
+}
+
+type qualityMetric struct {
+	Value     float64 `json:"value"`
+	Unit      string  `json:"unit,omitempty"`
+	Available bool    `json:"available"`
+}
+
+type qualityReport struct {
+	QualityGate string                   `json:"qualityGate,omitempty"`
+	Metrics     map[string]qualityMetric `json:"metrics"`
 }
 
 type workItem struct {
@@ -82,6 +96,7 @@ type statusReport struct {
 	InProgress  []workItem        `json:"inProgress"`
 	Risks       []workItem        `json:"risks"`
 	Sources     []sourceStatus    `json:"sources"`
+	Quality     qualityReport     `json:"quality"`
 	Errors      []string          `json:"errors"`
 }
 
@@ -128,6 +143,9 @@ func loadConfig() config {
 		azdoProject:      os.Getenv("AZDO_PROJECT"),
 		azdoRepository:   os.Getenv("AZDO_REPOSITORY"),
 		azdoPAT:          os.Getenv("AZDO_PAT"),
+		sonarCloudToken:  os.Getenv("SONARCLOUD_TOKEN"),
+		sonarCloudOrg:    os.Getenv("SONARCLOUD_ORGANIZATION"),
+		sonarCloudKey:    os.Getenv("SONARCLOUD_PROJECT_KEY"),
 	}
 	githubRequested := cfg.githubToken != "" || len(repos) > 0 || os.Getenv("GITHUB_OWNER") != "" || os.Getenv("GITHUB_REPO") != ""
 	if githubRequested && (cfg.githubToken == "" || len(cfg.githubRepos) == 0) {
@@ -143,7 +161,23 @@ func loadConfig() config {
 			message: "set AZDO_ORG, AZDO_PROJECT, AZDO_REPOSITORY, and AZDO_PAT",
 		})
 	}
+	sonarRequested := cfg.sonarCloudToken != "" || cfg.sonarCloudOrg != "" || cfg.sonarCloudKey != ""
+	if sonarRequested && (cfg.sonarCloudToken == "" || cfg.sonarCloudOrg == "" || cfg.sonarCloudKey == "") {
+		cfg.issues = append(cfg.issues, configurationIssue{
+			source:  "SonarCloud",
+			message: "set SONARCLOUD_TOKEN, SONARCLOUD_ORGANIZATION, and SONARCLOUD_PROJECT_KEY",
+		})
+	}
 	return cfg
+}
+
+func configuredQualityCollectors(cfg config) []qualityCollector {
+	if cfg.sonarCloudToken == "" || cfg.sonarCloudOrg == "" || cfg.sonarCloudKey == "" {
+		return nil
+	}
+	return []qualityCollector{sonarCloudCollector{
+		token: cfg.sonarCloudToken, organization: cfg.sonarCloudOrg, projectKey: cfg.sonarCloudKey,
+	}}
 }
 
 func configuredCollectors(cfg config) []collector {
@@ -165,13 +199,39 @@ func configuredCollectors(cfg config) []collector {
 
 func generateReport(ctx context.Context, cfg config, now time.Time) statusReport {
 	sources := configuredCollectors(cfg)
-	report := buildReport(ctx, sources, now)
-	if len(sources) == 0 && len(cfg.issues) > 0 {
+	qualitySources := configuredQualityCollectors(cfg)
+	var report statusReport
+	if len(sources) == 0 && len(qualitySources) > 0 {
+		start, end := weekWindow(now)
+		report = statusReport{GeneratedAt: now, WeekStart: start, WeekEnd: end, Metrics: make(map[string]metric)}
+	} else {
+		report = buildReport(ctx, sources, now)
+	}
+	if len(sources) == 0 && len(qualitySources) == 0 && len(cfg.issues) > 0 {
 		start, end := weekWindow(now)
 		report = statusReport{
 			GeneratedAt: now, WeekStart: start, WeekEnd: end,
 			Metrics: make(map[string]metric),
 		}
+	}
+	if !report.Demo {
+		report.Quality = qualityReport{Metrics: make(map[string]qualityMetric)}
+	}
+	for _, source := range qualitySources {
+		sourceCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+		quality, err := source.collectQuality(sourceCtx)
+		cancel()
+		if err != nil {
+			report.Errors = append(report.Errors, source.name()+": "+err.Error())
+			report.Sources = append(report.Sources, sourceStatus{
+				Name: source.name(), Kind: source.name(), Connected: false, Message: "Unable to load data",
+			})
+			continue
+		}
+		report.Quality = quality
+		report.Sources = append(report.Sources, sourceStatus{
+			Name: source.name(), Kind: source.name(), Connected: true, Message: "Connected", UpdatedAt: now,
+		})
 	}
 	for _, issue := range cfg.issues {
 		report.Errors = append(report.Errors, issue.source+": "+issue.message)
@@ -189,6 +249,7 @@ func buildReport(ctx context.Context, sources []collector, now time.Time) status
 	report := statusReport{
 		GeneratedAt: now, WeekStart: start, WeekEnd: end,
 		Metrics: make(map[string]metric),
+		Quality: qualityReport{Metrics: make(map[string]qualityMetric)},
 	}
 
 	if len(sources) == 0 {
@@ -330,10 +391,21 @@ func demoReport(now, start, end time.Time) statusReport {
 			"cycleTime":      {Value: 26.4, Previous: 31.2, Unit: "hours"},
 			"reviewCoverage": {Value: 83, Previous: 78, Unit: "%"},
 		},
+		Quality: qualityReport{
+			QualityGate: "OK",
+			Metrics: map[string]qualityMetric{
+				"coverage":               {Value: 78.4, Unit: "%", Available: true},
+				"bugs":                   {Value: 2, Available: true},
+				"vulnerabilities":        {Value: 0, Available: true},
+				"codeSmells":             {Value: 146, Available: true},
+				"duplicatedLinesDensity": {Value: 3.2, Unit: "%", Available: true},
+			},
+		},
 		Shipped: shipped, InProgress: active, Risks: []workItem{active[1]},
 		Sources: []sourceStatus{
 			{Name: "GitHub Enterprise", Kind: "GitHub Enterprise", Message: "Sample preview"},
 			{Name: "Azure DevOps", Kind: "Azure DevOps", Message: "Sample preview"},
+			{Name: "SonarCloud", Kind: "SonarCloud", Message: "Sample preview"},
 		},
 		Errors: nil,
 	}

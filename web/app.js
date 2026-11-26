@@ -6,6 +6,13 @@ const METRICS = [
   { key: "cycleTime", label: "Avg. PR cycle time", icon: "◷", unit: "hrs", lowerIsBetter: true },
   { key: "reviewCoverage", label: "Reviewed PR coverage", icon: "◎", unit: "%", lowerIsBetter: false },
 ];
+const QUALITY_METRICS = [
+  { key: "coverage", label: "Code coverage", icon: "◌", unit: "%" },
+  { key: "bugs", label: "Bugs", icon: "!", unit: "" },
+  { key: "vulnerabilities", label: "Vulnerabilities", icon: "◇", unit: "" },
+  { key: "codeSmells", label: "Code smells", icon: "≋", unit: "" },
+  { key: "duplicatedLinesDensity", label: "Duplicated lines", icon: "▤", unit: "%" },
+];
 
 function formatNumber(value, decimals = 0) {
   if (!Number.isFinite(value)) return "—";
@@ -96,6 +103,46 @@ function renderMetric(metric, definition) {
   return card;
 }
 
+function renderQualityMetric(metric, definition) {
+  const card = document.createElement("article");
+  card.className = "metric-card quality-metric-card";
+  const top = document.createElement("div");
+  top.className = "metric-top";
+  const label = document.createElement("span");
+  label.textContent = definition.label;
+  const icon = document.createElement("span");
+  icon.className = "metric-icon";
+  icon.textContent = definition.icon;
+  top.append(label, icon);
+
+  const value = document.createElement("div");
+  value.className = "metric-value";
+  const available = metric?.available === true && Number.isFinite(metric.value);
+  value.append(document.createTextNode(available ? formatNumber(metric.value, definition.unit ? 1 : 0) : "—"));
+  if (definition.unit && available) {
+    const unit = document.createElement("small");
+    unit.textContent = definition.unit;
+    value.append(unit);
+  }
+  const detail = document.createElement("div");
+  detail.className = "metric-trend";
+  detail.textContent = available ? "Latest SonarCloud analysis" : "No data available";
+  card.append(top, value, detail);
+  return card;
+}
+
+function renderQuality(report) {
+  const quality = report.quality ?? {};
+  const gate = document.getElementById("quality-gate");
+  const gateStatus = quality.qualityGate || "Not available";
+  gate.textContent = gateStatus;
+  gate.className = `quality-gate${gateStatus === "OK" ? " gate-good" : gateStatus === "ERROR" ? " gate-bad" : gateStatus === "WARN" ? " gate-warn" : ""}`;
+  const grid = document.getElementById("quality-metrics");
+  grid.replaceChildren(...QUALITY_METRICS.map((definition) => (
+    renderQualityMetric(quality.metrics?.[definition.key], definition)
+  )));
+}
+
 function renderSources(sources, demo) {
   const root = document.getElementById("source-list");
   root.replaceChildren();
@@ -108,7 +155,7 @@ function renderSources(sources, demo) {
     card.className = "source-card";
     const logo = document.createElement("span");
     logo.className = "source-logo";
-    logo.textContent = source.kind.startsWith("Azure") ? "Az" : "GH";
+    logo.textContent = source.kind.startsWith("Azure") ? "Az" : source.kind === "SonarCloud" ? "Sc" : "GH";
     const info = document.createElement("div");
     info.className = "source-info";
     const name = document.createElement("div");
@@ -145,6 +192,7 @@ function renderReport(report) {
     const metric = report.metrics?.[definition.key] ?? { value: NaN, previous: NaN };
     return renderMetric({ ...metric, key: definition.key }, definition);
   }));
+  renderQuality(report);
   const shipped = document.getElementById("shipped-list");
   const active = document.getElementById("progress-list");
   shipped.replaceChildren();
@@ -195,11 +243,17 @@ function reportMarkdown(report) {
     const unit = definition.unit ? ` ${definition.unit}` : "";
     return `| ${definition.label} | ${formatNumber(metric.value, definition.key === "cycleTime" ? 1 : 0)}${unit} | ${formatNumber(metric.previous, definition.key === "cycleTime" ? 1 : 0)}${unit} |`;
   });
+  const qualityLines = QUALITY_METRICS.map((definition) => {
+    const metric = report.quality?.metrics?.[definition.key];
+    const value = metric?.available ? `${formatNumber(metric.value, definition.unit ? 1 : 0)}${definition.unit ? ` ${definition.unit}` : ""}` : "—";
+    return `| ${definition.label} | ${value} |`;
+  });
   const list = (items) => items?.length ? items.map((item) => `- ${item.title} (${item.source})`).join("\n") : "- None this week";
   return [
     `# Engineering weekly status — week of ${formatDate(report.weekStart, { month: "long", day: "numeric", year: "numeric" })}`,
     "", "## Executive summary", notes("summary-note"),
     "", "## Key metrics", "| Metric | This week | Last week |", "|---|---:|---:|", ...metricLines,
+    "", "## Quality signals", `Quality gate: ${report.quality?.qualityGate || "Not available"}`, "| Metric | Latest |", "|---|---:|", ...qualityLines,
     "", "## Shipped this week", list(report.shipped),
     "", "## In progress", list(report.inProgress),
     "", "## Risks & blockers", list(report.risks),

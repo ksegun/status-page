@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -40,12 +44,16 @@ func TestBuildReportUsesDemoOnlyWhenNoCollectorsConfigured(t *testing.T) {
 	if len(report.Shipped) == 0 || len(report.Metrics) == 0 {
 		t.Fatal("sample report should contain items and metrics")
 	}
+	if report.Quality.QualityGate != "OK" || !report.Quality.Metrics["coverage"].Available {
+		t.Fatal("sample report should include quality metrics")
+	}
 }
 
 func TestIncompleteConfigurationDoesNotReturnDemoData(t *testing.T) {
 	for _, name := range []string{
 		"GITHUB_TOKEN", "GITHUB_REPOS", "GITHUB_OWNER", "GITHUB_REPO",
 		"GITHUB_GRAPHQL_URL", "GITHUB_API_URL", "AZDO_PROJECT", "AZDO_REPOSITORY", "AZDO_PAT",
+		"SONARCLOUD_TOKEN", "SONARCLOUD_ORGANIZATION", "SONARCLOUD_PROJECT_KEY",
 	} {
 		t.Setenv(name, "")
 	}
@@ -57,6 +65,68 @@ func TestIncompleteConfigurationDoesNotReturnDemoData(t *testing.T) {
 	}
 	if len(report.Errors) == 0 || len(report.Metrics) != 0 {
 		t.Fatalf("expected a configuration error and no fabricated metrics, got errors=%v metrics=%v", report.Errors, report.Metrics)
+	}
+}
+
+func TestSonarCloudCollectorReturnsQualityMeasuresAndGate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("sonar-token:"))
+		if got := r.Header.Get("Authorization"); got != wantAuth {
+			t.Errorf("authorization = %q, want SonarCloud token authentication", got)
+		}
+		switch r.URL.Path {
+		case "/api/measures/component":
+			if got := r.URL.Query().Get("component"); got != "acme:service" {
+				t.Errorf("component = %q, want acme:service", got)
+			}
+			if got := r.URL.Query().Get("organization"); got != "acme" {
+				t.Errorf("organization = %q, want acme", got)
+			}
+			_, _ = fmt.Fprint(w, `{"component":{"measures":[{"metric":"coverage","value":"82.5"},{"metric":"bugs","value":"3"},{"metric":"vulnerabilities","value":"0"},{"metric":"code_smells","value":"12"},{"metric":"duplicated_lines_density","value":"4.2"}]}}`)
+		case "/api/qualitygates/project_status":
+			_, _ = fmt.Fprint(w, `{"projectStatus":{"status":"OK"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	report, err := (sonarCloudCollector{
+		token: "sonar-token", organization: "acme", projectKey: "acme:service", apiURL: server.URL,
+	}).collectQuality(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.QualityGate != "OK" {
+		t.Fatalf("quality gate = %q, want OK", report.QualityGate)
+	}
+	if got := report.Metrics["coverage"]; !got.Available || got.Value != 82.5 || got.Unit != "%" {
+		t.Errorf("coverage = %+v, want available 82.5%%", got)
+	}
+	if got := report.Metrics["vulnerabilities"]; !got.Available || got.Value != 0 {
+		t.Errorf("vulnerabilities = %+v, want available zero", got)
+	}
+	if got := report.Metrics["codeSmells"]; !got.Available || got.Value != 12 {
+		t.Errorf("code smells = %+v, want available 12", got)
+	}
+}
+
+func TestSonarCloudConfigurationIsRequiredAsASet(t *testing.T) {
+	for _, name := range []string{
+		"GITHUB_TOKEN", "GITHUB_REPOS", "GITHUB_OWNER", "GITHUB_REPO",
+		"AZDO_ORG", "AZDO_PROJECT", "AZDO_REPOSITORY", "AZDO_PAT",
+		"SONARCLOUD_TOKEN", "SONARCLOUD_ORGANIZATION",
+	} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("SONARCLOUD_PROJECT_KEY", "acme:service")
+
+	report := generateReport(context.Background(), loadConfig(), time.Now())
+	if report.Demo {
+		t.Fatal("incomplete SonarCloud configuration must not show sample data")
+	}
+	if len(report.Errors) != 1 || len(report.Metrics) != 0 {
+		t.Fatalf("expected only a configuration error and no fabricated metrics, got errors=%v metrics=%v", report.Errors, report.Metrics)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 A lightweight weekly engineering status report built with Go. It summarizes merged pull requests, active work, stale-work risks, successful GitHub Actions runs, average PR cycle time, and team-level review coverage, with comparisons to the previous week.
 
-With no integrations configured, the dashboard displays clearly labeled sample data. Configure one or both data sources to use live data.
+With no integrations configured, the dashboard displays clearly labeled sample data. Configure any of the data sources to use live data.
 
 ## Run locally
 
@@ -44,6 +44,18 @@ export AZDO_PAT=...
 ```
 
 Azure DevOps pull requests are read through its supported REST API; Azure DevOps does not expose a supported public GraphQL API for this data.
+
+### SonarCloud
+
+Configure a project and a read-only SonarCloud user token to show the latest quality gate, coverage, bug, vulnerability, code-smell, and duplicated-line measures:
+
+```sh
+export SONARCLOUD_TOKEN=...
+export SONARCLOUD_ORGANIZATION="my-organization"
+export SONARCLOUD_PROJECT_KEY="my-project-key"
+```
+
+Quality measures are a snapshot of the latest SonarCloud analysis, not a weekly comparison. Metrics not available for the selected project are shown as unavailable rather than as zero.
 
 ### Notes
 
