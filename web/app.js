@@ -4,6 +4,7 @@ const METRICS = [
   { key: "activePRs", label: "Active pull requests", icon: "↗", unit: "", lowerIsBetter: null },
   { key: "successfulCI", label: "Successful CI runs", icon: "⌘", unit: "", lowerIsBetter: false },
   { key: "cycleTime", label: "Avg. PR cycle time", icon: "◷", unit: "hrs", lowerIsBetter: true },
+  { key: "reviewCoverage", label: "Reviewed PR coverage", icon: "◎", unit: "%", lowerIsBetter: false },
 ];
 
 function formatNumber(value, decimals = 0) {
@@ -84,7 +85,8 @@ function renderMetric(metric, definition) {
     return card;
   }
   const delta = metric.value - metric.previous;
-  const deltaText = `${delta > 0 ? "+" : ""}${formatNumber(delta, metric.key === "cycleTime" ? 1 : 0)} vs last week`;
+  const deltaUnit = metric.key === "reviewCoverage" ? " pp" : metric.key === "cycleTime" ? " hrs" : "";
+  const deltaText = `${delta > 0 ? "+" : ""}${formatNumber(delta, metric.key === "cycleTime" ? 1 : 0)}${deltaUnit} vs last week`;
   trend.textContent = deltaText;
   if (definition.lowerIsBetter !== null && delta !== 0) {
     const improved = definition.lowerIsBetter ? delta < 0 : delta > 0;

@@ -43,6 +43,7 @@ type collector interface {
 type sourceData struct {
 	Shipped      []workItem
 	InProgress   []workItem
+	ReviewedPRs  int
 	SuccessfulCI int
 	CycleHours   []float64
 }
@@ -249,6 +250,13 @@ func buildReport(ctx context.Context, sources []collector, now time.Time) status
 		report.Metrics["activePRs"] = metric{Value: float64(len(all.InProgress)), Previous: float64(len(previous.InProgress))}
 		report.Metrics["successfulCI"] = metric{Value: float64(all.SuccessfulCI), Previous: float64(previous.SuccessfulCI)}
 		report.Metrics["cycleTime"] = metric{Value: average(all.CycleHours), Previous: average(previous.CycleHours), Unit: "hours"}
+		if len(all.Shipped) > 0 || len(previous.Shipped) > 0 {
+			report.Metrics["reviewCoverage"] = metric{
+				Value:    percentage(all.ReviewedPRs, len(all.Shipped)),
+				Previous: percentage(previous.ReviewedPRs, len(previous.Shipped)),
+				Unit:     "%",
+			}
+		}
 	}
 	return report
 }
@@ -265,6 +273,7 @@ func hasConnectedSource(sources []sourceStatus) bool {
 func mergeData(dst, src sourceData) sourceData {
 	dst.Shipped = append(dst.Shipped, src.Shipped...)
 	dst.InProgress = append(dst.InProgress, src.InProgress...)
+	dst.ReviewedPRs += src.ReviewedPRs
 	dst.SuccessfulCI += src.SuccessfulCI
 	dst.CycleHours = append(dst.CycleHours, src.CycleHours...)
 	return dst
@@ -288,6 +297,13 @@ func average(values []float64) float64 {
 	return sum / float64(len(values))
 }
 
+func percentage(numerator, denominator int) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator) * 100
+}
+
 func sourceKind(name string) string {
 	if strings.Contains(strings.ToLower(name), "azure") {
 		return "Azure DevOps"
@@ -308,10 +324,11 @@ func demoReport(now, start, end time.Time) statusReport {
 	return statusReport{
 		GeneratedAt: now, WeekStart: start, WeekEnd: end, Demo: true,
 		Metrics: map[string]metric{
-			"mergedPRs":    {Value: 12, Previous: 9},
-			"activePRs":    {Value: 7, Previous: 8},
-			"successfulCI": {Value: 34, Previous: 29},
-			"cycleTime":    {Value: 26.4, Previous: 31.2, Unit: "hours"},
+			"mergedPRs":      {Value: 12, Previous: 9},
+			"activePRs":      {Value: 7, Previous: 8},
+			"successfulCI":   {Value: 34, Previous: 29},
+			"cycleTime":      {Value: 26.4, Previous: 31.2, Unit: "hours"},
+			"reviewCoverage": {Value: 83, Previous: 78, Unit: "%"},
 		},
 		Shipped: shipped, InProgress: active, Risks: []workItem{active[1]},
 		Sources: []sourceStatus{

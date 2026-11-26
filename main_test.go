@@ -59,3 +59,49 @@ func TestIncompleteConfigurationDoesNotReturnDemoData(t *testing.T) {
 		t.Fatalf("expected a configuration error and no fabricated metrics, got errors=%v metrics=%v", report.Errors, report.Metrics)
 	}
 }
+
+type fixedCollector struct {
+	sourceName   string
+	currentStart time.Time
+	current      sourceData
+	previous     sourceData
+}
+
+func (c fixedCollector) name() string { return c.sourceName }
+
+func (c fixedCollector) collect(_ context.Context, start, _ time.Time) (sourceData, error) {
+	if start.Equal(c.currentStart) {
+		return c.current, nil
+	}
+	return c.previous, nil
+}
+
+func TestBuildReportCalculatesTeamReviewCoverage(t *testing.T) {
+	now := time.Date(2026, time.November, 26, 8, 30, 0, 0, time.UTC)
+	currentStart, _ := weekWindow(now)
+	report := buildReport(context.Background(), []collector{
+		fixedCollector{
+			sourceName:   "GitHub Enterprise",
+			currentStart: currentStart,
+			current: sourceData{
+				Shipped:     []workItem{{}, {}, {}, {}},
+				ReviewedPRs: 3,
+			},
+			previous: sourceData{
+				Shipped:     []workItem{{}, {}},
+				ReviewedPRs: 1,
+			},
+		},
+	}, now)
+
+	got := report.Metrics["reviewCoverage"]
+	if got.Value != 75 || got.Previous != 50 || got.Unit != "%" {
+		t.Fatalf("review coverage = %+v, want 75%% current and 50%% previous", got)
+	}
+}
+
+func TestPercentageWithNoMergedPullRequests(t *testing.T) {
+	if got := percentage(0, 0); got != 0 {
+		t.Fatalf("percentage with no merged pull requests = %v, want 0", got)
+	}
+}

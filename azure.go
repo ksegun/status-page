@@ -34,8 +34,13 @@ func (a azureCollector) collect(ctx context.Context, start, end time.Time) (sour
 			ClosedDate   time.Time `json:"closedDate"`
 			URL          string    `json:"url"`
 			CreatedBy    struct {
+				ID          string `json:"id"`
 				DisplayName string `json:"displayName"`
 			} `json:"createdBy"`
+			Reviewers []struct {
+				ID   string `json:"id"`
+				Vote int    `json:"vote"`
+			} `json:"reviewers"`
 		} `json:"value"`
 	}
 	err := requestJSON(ctx, sharedHTTPClient, "GET", endpoint, nil, map[string]string{
@@ -59,6 +64,12 @@ func (a azureCollector) collect(ctx context.Context, start, end time.Time) (sour
 		if strings.EqualFold(pr.Status, "completed") && inWindow(pr.ClosedDate, start, end) {
 			data.Shipped = append(data.Shipped, item)
 			data.CycleHours = append(data.CycleHours, pr.ClosedDate.Sub(pr.CreationDate).Hours())
+			for _, reviewer := range pr.Reviewers {
+				if reviewer.Vote != 0 && !strings.EqualFold(reviewer.ID, pr.CreatedBy.ID) {
+					data.ReviewedPRs++
+					break
+				}
+			}
 		}
 		if strings.EqualFold(pr.Status, "active") {
 			data.InProgress = append(data.InProgress, item)

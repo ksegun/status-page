@@ -30,7 +30,15 @@ type githubGraphQLResponse struct {
 					CreatedAt time.Time `json:"createdAt"`
 					UpdatedAt time.Time `json:"updatedAt"`
 					MergedAt  time.Time `json:"mergedAt"`
-					Author    *struct {
+					Reviews   struct {
+						Nodes []struct {
+							State  string `json:"state"`
+							Author *struct {
+								Login string `json:"login"`
+							} `json:"author"`
+						} `json:"nodes"`
+					} `json:"reviews"`
+					Author *struct {
 						Login string `json:"login"`
 					} `json:"author"`
 				} `json:"nodes"`
@@ -45,7 +53,7 @@ type githubGraphQLResponse struct {
 const pullRequestsQuery = `query($owner:String!,$name:String!){
   repository(owner:$owner,name:$name){
     pullRequests(first:100,states:[OPEN,MERGED],orderBy:{field:UPDATED_AT,direction:DESC}){
-      nodes{title url state createdAt updatedAt mergedAt author{login}}
+      nodes{title url state createdAt updatedAt mergedAt author{login} reviews(first:100){nodes{state author{login}}}}
     }
   }
 }`
@@ -85,6 +93,12 @@ func (g githubCollector) collect(ctx context.Context, start, end time.Time) (sou
 			if pr.State == "MERGED" && inWindow(pr.MergedAt, start, end) {
 				combined.Shipped = append(combined.Shipped, item)
 				combined.CycleHours = append(combined.CycleHours, pr.MergedAt.Sub(pr.CreatedAt).Hours())
+				for _, review := range pr.Reviews.Nodes {
+					if review.State != "PENDING" && review.Author != nil && (pr.Author == nil || review.Author.Login != pr.Author.Login) {
+						combined.ReviewedPRs++
+						break
+					}
+				}
 			}
 			if pr.State == "OPEN" {
 				combined.InProgress = append(combined.InProgress, item)

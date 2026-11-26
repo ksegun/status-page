@@ -1,6 +1,6 @@
 # Engineering Status
 
-A lightweight weekly engineering status report built with Go. It summarizes merged pull requests, active work, stale-work risks, successful GitHub Actions runs, and average PR cycle time, with comparisons to the previous week.
+A lightweight weekly engineering status report built with Go. It summarizes merged pull requests, active work, stale-work risks, successful GitHub Actions runs, average PR cycle time, and team-level review coverage, with comparisons to the previous week.
 
 With no integrations configured, the dashboard displays clearly labeled sample data. Configure one or both data sources to use live data.
 
@@ -48,6 +48,8 @@ Azure DevOps pull requests are read through its supported REST API; Azure DevOps
 ### Notes
 
 - The reporting week starts Monday in the server's local timezone. The current week and the previous seven-day week are compared.
+- Review coverage is the percentage of merged pull requests with a peer GitHub review or a non-zero Azure DevOps reviewer vote. It is not a measure of review quality.
+- Deployment frequency, change failure rate, and investment allocation are not inferred from CI runs or pull request data and are not currently measured.
 - A stale-work risk is an open PR created at least seven days ago. Treat it as a prompt to review, not a confirmed blocker.
 - The dashboard surfaces connection failures instead of substituting sample data for configured sources. See `/healthz` for a basic process health check and `/api/status` for report data.
 - Keep credentials in environment variables or your deployment platform's secret store. Do not commit tokens.
