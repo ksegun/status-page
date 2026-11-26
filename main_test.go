@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -70,7 +69,7 @@ func TestIncompleteConfigurationDoesNotReturnDemoData(t *testing.T) {
 
 func TestSonarCloudCollectorReturnsQualityMeasuresAndGate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("sonar-token:"))
+		wantAuth := "Bearer sonar-token"
 		if got := r.Header.Get("Authorization"); got != wantAuth {
 			t.Errorf("authorization = %q, want SonarCloud token authentication", got)
 		}

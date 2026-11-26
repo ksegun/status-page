@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -36,7 +35,6 @@ func (s sonarCloudCollector) collectQuality(ctx context.Context) (qualityReport,
 	if apiURL == "" {
 		apiURL = "https://sonarcloud.io"
 	}
-	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(s.token+":"))
 	values := url.Values{
 		"component":    {s.projectKey},
 		"organization": {s.organization},
@@ -53,7 +51,7 @@ func (s sonarCloudCollector) collectQuality(ctx context.Context) (qualityReport,
 			Message string `json:"msg"`
 		} `json:"errors"`
 	}
-	headers := map[string]string{"Authorization": auth, "Accept": "application/json"}
+	headers := map[string]string{"Authorization": "Bearer " + s.token, "Accept": "application/json"}
 	if err := requestJSON(ctx, sharedHTTPClient, "GET", apiURL+"/api/measures/component?"+values.Encode(), nil, headers, &measures); err != nil {
 		return qualityReport{}, fmt.Errorf("measures: %w", err)
 	}
