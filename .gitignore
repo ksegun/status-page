@@ -1,2 +1,6 @@
-engineering-status
 .env
+.env.*
+.env*.local
+
+engineering-status
+main
